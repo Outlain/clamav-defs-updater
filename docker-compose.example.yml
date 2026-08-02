@@ -1,0 +1,26 @@
+services:
+  clamav-defs-updater:
+    image: ghcr.io/${GITHUB_OWNER:-outlain}/clamav-defs-updater:${IMAGE_TAG:-latest}
+    container_name: clamav-defs-updater
+    user: "${HELPER_UID:-10001}:${HELPER_GID:-10001}"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    environment:
+      DEFINITIONS_DIR: /var/lib/clamav
+      UPDATE_INTERVAL_SECONDS: ${UPDATE_INTERVAL_SECONDS:-21600}
+      FAILURE_RETRY_SECONDS: ${FAILURE_RETRY_SECONDS:-300}
+      MAX_DEFINITION_AGE_SECONDS: ${MAX_DEFINITION_AGE_SECONDS:-172800}
+    volumes:
+      - ${DEFINITIONS_HOST_PATH:-/mnt/media/docker/clamav/defs}:/var/lib/clamav:rw
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
