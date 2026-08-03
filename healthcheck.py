@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Fail when the shared ClamAV database is incomplete or stale."""
+"""Fail when the shared ClamAV database is incomplete, stale, or unwritable."""
 
 from __future__ import annotations
 
 import os
-import stat
 import sys
-import time
+import tempfile
 from pathlib import Path
+
+from definition_status import database_candidate, require_fresh_definitions
 
 DEFINITIONS_DIR = Path(os.environ.get("DEFINITIONS_DIR", "/var/lib/clamav"))
 MAX_DEFINITION_AGE_SECONDS = max(
@@ -16,38 +17,35 @@ MAX_DEFINITION_AGE_SECONDS = max(
 
 
 def candidate(stem: str) -> Path:
-    available: list[tuple[int, Path]] = []
-    for suffix in ("cld", "cvd"):
-        path = DEFINITIONS_DIR / f"{stem}.{suffix}"
-        try:
-            info = path.lstat()
-        except OSError:
-            continue
-        if stat.S_ISREG(info.st_mode) and info.st_size > 0 and os.access(path, os.R_OK):
-            available.append((info.st_mtime_ns, path))
-    if not available:
-        raise RuntimeError(f"missing readable {stem}.cld/{stem}.cvd in {DEFINITIONS_DIR}")
-    return max(available, key=lambda item: item[0])[1]
+    """Compatibility wrapper retained for callers and tests."""
+    return database_candidate(DEFINITIONS_DIR, stem)
 
 
 def main() -> int:
+    temporary: Path | None = None
+    descriptor = -1
     try:
-        candidate("main")
-        daily = candidate("daily")
-        age = max(0, int(time.time() - daily.stat().st_mtime))
-        if age > MAX_DEFINITION_AGE_SECONDS:
-            raise RuntimeError(
-                f"daily definitions are stale: age={age}s max={MAX_DEFINITION_AGE_SECONDS}s"
-            )
-        probe = DEFINITIONS_DIR / ".health-write-probe"
-        with probe.open("w", encoding="ascii") as handle:
-            handle.write("ok\n")
-        probe.unlink()
-        print(f"healthy: daily={daily.name} age={age}s")
+        status = require_fresh_definitions(
+            DEFINITIONS_DIR, MAX_DEFINITION_AGE_SECONDS
+        )
+        descriptor, name = tempfile.mkstemp(prefix=".health-write-", dir=DEFINITIONS_DIR)
+        temporary = Path(name)
+        os.write(descriptor, b"ok\n")
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        temporary.unlink()
+        temporary = None
+        print(f"healthy: daily={status.daily.name} age={status.daily_age_seconds}s")
         return 0
     except (OSError, RuntimeError) as exc:
         print(f"unhealthy: {exc}", file=sys.stderr)
         return 1
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

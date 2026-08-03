@@ -1,43 +1,71 @@
 # clamav-defs-updater
 
-A standalone Docker image that runs `freshclam` immediately and then keeps a shared ClamAV definition directory updated on a retry-safe interval.
+The suite's only ClamAV signature writer. It runs FreshClam immediately at
+startup, repeats successful updates on a configurable interval, and retries every
+failed invocation without treating an older database as a successful update.
 
-This repository is intended to be uploaded by itself to a GitHub repository named `clamav-defs-updater`.
+## Contract
 
-## What it does
+- This container alone mounts `/var/lib/clamav` read/write.
+- `clamav-scheduled`, `torrent-intake-clamd`, and `web-scan-move-clamd` mount the
+  same host directory read-only.
+- The updater never needs a scanner socket or the Docker socket.
+- Scanner daemons notice atomic FreshClam updates through `SelfCheck` (300 seconds
+  in the examples).
+- FreshClam updates signatures only. ClamAV, Alpine packages, application source,
+  Python dependencies, and images are updated by reviewed image builds.
 
-- Runs FreshClam immediately at container startup.
-- Retries quickly when no complete database exists.
-- Uses the normal update interval after a successful update or when a usable database already exists.
-- Exposes a Docker health check that requires readable `main` and `daily` databases and rejects stale daily definitions.
-- Runs as non-root UID/GID `10001:10001` by default.
-- Publishes amd64 and arm64 images to GHCR through GitHub Actions.
+After each attempt the loop verifies that readable, non-empty `main.cvd/main.cld`
+and `daily.cvd/daily.cld` files exist and that the daily database is fresh. A zero
+FreshClam exit code with an unusable database is still a failure. State is written
+atomically to `/state/updater-state.json`.
 
-## Shared-definition rule
+The service emits atomic schema-v1 events to `/events`:
 
-This container must be the **only writer** to the mounted definition directory. Other containers such as `clamav-scheduled` and `web-scan-move` should mount the same host directory read-only.
+- `definitions_updated` (informational and suppressed by the notifier)
+- `definitions_update_failed`
+- `definitions_stale`
+- `service_recovered`
 
-Do not attach this updater to Torrent Intake's separate ClamAV sidecar database while that sidecar is also running FreshClam.
+## Configuration
 
-## Deploy
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DEFINITIONS_DIR` | `/var/lib/clamav` | sole writable signature directory |
+| `UPDATE_INTERVAL_SECONDS` | `21600` | delay after a successful update |
+| `FAILURE_RETRY_SECONDS` | `300` | delay after a failed update |
+| `UPDATE_TIMEOUT_SECONDS` | `1800` | hard limit for one FreshClam attempt |
+| `MAX_DEFINITION_AGE_SECONDS` | `172800` | health/stale threshold |
+| `EVENT_DIR` | `/events` | updater event spool |
+| `STATE_DIR` | `/state` | durable updater status |
 
-1. Upload this entire folder to a new GitHub repository.
-2. Keep the default branch named `main`.
-3. Enable GitHub Actions and package publishing.
-4. Copy `.env.example` to `.env` on the Docker host and adjust the host path and UID/GID.
-5. Deploy `docker-compose.example.yml`.
+Copy `.env.example` to `.env`, prepare the host directories as UID/GID 10001 (or
+set one consistent replacement identity), and run:
 
-The published image will be:
-
-```text
-ghcr.io/<github-owner>/clamav-defs-updater:latest
+```sh
+docker compose -f docker-compose.example.yml up -d
+docker inspect --format '{{json .State.Health}}' clamav-defs-updater
 ```
 
-## Local validation
+The example uses:
 
-```bash
+- `/opt/docker/clamav-shared/defs`
+- `/opt/docker/clamav-shared/events/clamav-defs-updater`
+- `/opt/docker/clamav-shared/state/defs-updater`
+
+It has a read-only root filesystem, bounded logs/resources, no added capabilities,
+and only the three writable bind mounts above plus a small `/tmp` tmpfs. The
+image supplies a minimal FreshClam configuration without Alpine's local
+`NotifyClamd` setting; scanner daemons reload independently through `SelfCheck`.
+
+## Validation and publishing
+
+```sh
 python3 -m unittest discover -s tests -v
-python3 -m py_compile freshclam_loop.py healthcheck.py
+python3 -m py_compile freshclam_loop.py healthcheck.py definition_status.py event_writer.py
 docker compose -f docker-compose.example.yml config --quiet
 docker build -t clamav-defs-updater:test .
 ```
+
+GitHub Actions validates the project and publishes multi-architecture
+`ghcr.io/<owner>/clamav-defs-updater` images for `linux/amd64` and `linux/arm64`.

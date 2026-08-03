@@ -10,15 +10,25 @@ services:
       DEFINITIONS_DIR: /var/lib/clamav
       UPDATE_INTERVAL_SECONDS: ${UPDATE_INTERVAL_SECONDS:-21600}
       FAILURE_RETRY_SECONDS: ${FAILURE_RETRY_SECONDS:-300}
+      UPDATE_TIMEOUT_SECONDS: ${UPDATE_TIMEOUT_SECONDS:-1800}
       MAX_DEFINITION_AGE_SECONDS: ${MAX_DEFINITION_AGE_SECONDS:-172800}
     volumes:
-      - ${DEFINITIONS_HOST_PATH:-/mnt/media/docker/clamav/defs}:/var/lib/clamav:rw
+      - ${DEFINITIONS_HOST_PATH:-/opt/docker/clamav-shared/defs}:/var/lib/clamav:rw
+      - ${EVENTS_HOST_PATH:-/opt/docker/clamav-shared/events/clamav-defs-updater}:/events:rw
+      - ${UPDATER_STATE_HOST_PATH:-/opt/docker/clamav-shared/state/defs-updater}:/state:rw
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 1.0
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 4096
     logging:
       driver: json-file
       options:

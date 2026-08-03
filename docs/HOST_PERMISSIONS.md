@@ -1,11 +1,17 @@
 # Host permissions
 
-The image defaults to UID/GID `10001:10001`. The mounted definitions directory must be readable, writable, and searchable by the effective container user.
+The image runs as UID/GID `10001:10001` by default. Prepare only its operational
+directories; no media mount is required.
 
-Default host path:
-
-```text
-/mnt/media/docker/clamav/defs
+```sh
+sudo install -d -m 0750 -o 10001 -g 10001 \
+  /opt/docker/clamav-shared/defs \
+  /opt/docker/clamav-shared/events/clamav-defs-updater \
+  /opt/docker/clamav-shared/state/defs-updater
 ```
 
-You can override `HELPER_UID` and `HELPER_GID` in `.env`, but the chosen account must be able to create, replace, and remove FreshClam database files in that directory.
+The updater needs read/write/search permission on all three. Scanners need only
+read/search permission on the definition directory and mount it `:ro`. Keeping
+the same numeric UID/GID across the suite is the simplest deployment. Do not put
+the definition directory back under `/mnt/media`, where the broad `/downloads`
+alias would expose it to content-processing containers.

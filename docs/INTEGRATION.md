@@ -1,17 +1,22 @@
 # Integration
 
-The updater writes to `/var/lib/clamav` inside the container. Bind-mount the host definition directory there read-write.
-
-Consumers should mount the same host directory read-only:
+Start this container before scanners. Wait for its health check to pass, then
+mount the exact same host directory in every consumer:
 
 ```yaml
 volumes:
-  - /mnt/media/docker/clamav/defs:/var/lib/clamav:ro
+  - /opt/docker/clamav-shared/defs:/var/lib/clamav:ro
 ```
 
-Recommended consumers:
+Consumers are `clamav-scheduled`, `torrent-intake-clamd`, and
+`web-scan-move-clamd`. The Torrent Intake and web application containers do not
+need the definitions mount because they stream data to their private sidecars.
 
-- `clamav-scheduled`, which keeps one persistent `clamd` process.
-- `web-scan-move`, which starts a new `clamscan` process for each settled intake item.
+Do not configure FreshClam in a scanner and do not run two updater instances
+against the same directory. A scanner's persistent ClamD uses `SelfCheck 300` by
+default. The scheduled scanner also supports an explicit operator reload through
+its health helper; no service uses the Docker socket.
 
-Only one FreshClam process should write to a given database directory.
+Updater events are written to
+`/opt/docker/clamav-shared/events/clamav-defs-updater`. The notifier mounts the
+parent `/opt/docker/clamav-shared/events` directory.
