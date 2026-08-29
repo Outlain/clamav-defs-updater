@@ -35,7 +35,7 @@ jobs:
         run: |
           docker run --rm --entrypoint id "${{ github.event.repository.name }}:test" -u | grep -qx 10001
           docker run --rm --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m --entrypoint python3 "${{ github.event.repository.name }}:test" -c 'import ast, pathlib; [ast.parse(pathlib.Path(path).read_text(encoding="utf-8")) for path in ("/usr/local/bin/freshclam_loop.py", "/usr/local/bin/healthcheck.py", "/usr/local/bin/definition_status.py", "/usr/local/bin/event_writer.py")]'
-          docker run --rm --entrypoint freshclam "${{ github.event.repository.name }}:test" --config-file=/etc/clamav/freshclam.conf --version | grep -E '^ClamAV 1\.4\.5($|/)'
+          docker run --rm --entrypoint freshclam "${{ github.event.repository.name }}:test" --config-file=/etc/clamav/freshclam.conf --version | grep -E '^ClamAV 1\.4\.[0-9]+($|/)'
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0

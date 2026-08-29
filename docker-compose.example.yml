@@ -23,7 +23,9 @@ services:
     security_opt:
       - no-new-privileges:true
     pids_limit: 64
-    mem_limit: 512m
+    # FreshClam load-tests downloaded databases. ClamAV recommends 3-4 GiB for
+    # containerized database loading; a 512 MiB cgroup limit kills that test.
+    mem_limit: 4g
     cpus: 1.0
     ulimits:
       nofile:

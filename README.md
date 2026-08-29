@@ -58,6 +58,14 @@ and only the three writable bind mounts above plus a small `/tmp` tmpfs. The
 image supplies a minimal FreshClam configuration without Alpine's local
 `NotifyClamd` setting; scanner daemons reload independently through `SelfCheck`.
 
+FreshClam load-tests each downloaded database before publishing it. This briefly
+requires substantially more memory than downloading the file, so the Compose
+example permits up to 4 GiB. Docker memory limits are ceilings, not reservations.
+Do not reduce this to 512 MiB: `Database load killed by signal 9` during an update
+normally means the cgroup out-of-memory killer terminated the database test.
+`TestDatabases yes` is intentionally retained so an unvalidated database is not
+shared with every scanner.
+
 ## Validation and publishing
 
 ```sh
